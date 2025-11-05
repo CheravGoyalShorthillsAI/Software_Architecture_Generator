@@ -1,0 +1,8 @@
+# Python dependencies for The Genesis Engine backend
+fastapi
+uvicorn[standard]
+pydantic
+google-generativeai
+psycopg2-binary
+python-dotenv
+sqlalchemy
