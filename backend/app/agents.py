@@ -19,7 +19,8 @@ settings = Settings()
 # Configure Gemini AI
 genai.configure(api_key=settings.gemini_api_key)
 
-EMBEDDING_MODEL_NAME = "models/text-embedding-004"
+EMBEDDING_MODEL_NAME = settings.gemini_embedding_model
+EMBEDDING_DIMENSION = settings.gemini_embedding_dimension
 
 class GeminiAgent:
     """AI Agent using Google's Gemini model for text generation and analysis."""
@@ -69,15 +70,25 @@ async def generate_embedding(text_to_embed: str) -> List[float]:
     if not text_to_embed:
         return []
 
-    try:
-        response = await genai.embed_content_async(
+    def _embed_sync() -> List[float]:
+        response = genai.embed_content(
             model=EMBEDDING_MODEL_NAME,
             content=text_to_embed
         )
         embedding = response.get("embedding")
         if embedding is None:
             raise ValueError("Embedding response did not contain an embedding vector")
-        return list(embedding)
+        embedding_list = list(embedding)
+        if EMBEDDING_DIMENSION and len(embedding_list) != EMBEDDING_DIMENSION:
+            logger.warning(
+                "Received embedding dimension %s, expected %s",
+                len(embedding_list),
+                EMBEDDING_DIMENSION
+            )
+        return embedding_list
+
+    try:
+        return await asyncio.to_thread(_embed_sync)
     except Exception as exc:
         logger.error("Failed to generate embedding: %s", exc)
         raise Exception(f"Embedding generation failed: {exc}") from exc

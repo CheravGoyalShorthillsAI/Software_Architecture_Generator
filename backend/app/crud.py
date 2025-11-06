@@ -226,7 +226,7 @@ def hybrid_search_in_fork(
     query_text: str,
     query_embedding: List[float],
     limit: int = 15
-) -> List[models.Analysis]:
+) -> List[Dict[str, Any]]:
     """Perform hybrid keyword and vector search within a forked database."""
 
     if not query_text or not query_embedding:
@@ -236,10 +236,10 @@ def hybrid_search_in_fork(
     embedding_param = bindparam("query_embedding", type_=Vector(768))
 
     stmt = (
-        select(models.Analysis)
+        select(    models.Analysis)
         .where(
             func.to_tsvector("english", models.Analysis.finding).op("@@")( 
-                func.to_tsquery("english", ts_query_param)
+                func.plainto_tsquery("english", ts_query_param)
             )
         )
         .order_by(models.Analysis.finding_embedding.op("<=>")(embedding_param))
@@ -253,7 +253,17 @@ def hybrid_search_in_fork(
             "query_embedding": query_embedding,
         }
     )
-    return result.scalars().all()
+    analyses = result.scalars().all()
+    return [
+        {
+            "id": analysis.id,
+            "blueprint_id": analysis.blueprint_id,
+            "category": analysis.category,
+            "finding": analysis.finding,
+            "severity": analysis.severity,
+        }
+        for analysis in analyses
+    ]
 
 
 # Additional utility functions

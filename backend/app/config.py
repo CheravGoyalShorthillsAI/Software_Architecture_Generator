@@ -45,6 +45,16 @@ class Settings(BaseSettings):
     openai_api_key: str = Field(default="", env="OPENAI_API_KEY")
     anthropic_api_key: str = Field(default="", env="ANTHROPIC_API_KEY")
     gemini_model_name: str = Field(default="models/gemini-2.5-pro", env="GEMINI_MODEL_NAME")
+    gemini_embedding_model: str = Field(
+        default="models/text-embedding-004",
+        env="GEMINI_EMBEDDING_MODEL",
+        description="Gemini embedding model identifier"
+    )
+    gemini_embedding_dimension: int = Field(
+        default=768,
+        env="GEMINI_EMBEDDING_DIMENSION",
+        description="Expected dimensionality of embedding vectors"
+    )
     
     @property
     def database_url(self) -> str:

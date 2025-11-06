@@ -626,7 +626,7 @@ async def search_project_forks(
     if not fork_names:
         return []
 
-    async def search_single_fork(fork_name: str) -> List[models.Analysis]:
+    async def search_single_fork(fork_name: str) -> List[Dict[str, Any]]:
         try:
             fork_session = create_fork_session(fork_name)
         except Exception as exc:
@@ -646,7 +646,7 @@ async def search_project_forks(
     search_tasks = [search_single_fork(name) for name in fork_names]
     search_results = await asyncio.gather(*search_tasks, return_exceptions=True)
 
-    combined_results: List[models.Analysis] = []
+    combined_results: List[Dict[str, Any]] = []
     for result in search_results:
         if isinstance(result, Exception):
             logger.error("Fork search task failed: %s", result)
@@ -655,6 +655,6 @@ async def search_project_forks(
 
     # Optional re-ranking could be applied here if scores were available
     return [
-        schemas.AnalysisResponse.model_validate(analysis, from_attributes=True)
+        schemas.AnalysisResponse.model_validate(analysis)
         for analysis in combined_results
     ]
