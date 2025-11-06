@@ -19,7 +19,16 @@ class ProjectBase(BaseModel):
 
 class ProjectCreate(ProjectBase):
     """Schema for creating a new project."""
-    pass
+    systems_analyst_prompt: Optional[str] = Field(
+        None, 
+        max_length=5000, 
+        description="Optional custom prompt for the systems analyst agent"
+    )
+    bizops_analyst_prompt: Optional[str] = Field(
+        None, 
+        max_length=5000, 
+        description="Optional custom prompt for the business operations analyst agent"
+    )
 
 
 class ProjectUpdate(BaseModel):
@@ -45,6 +54,7 @@ class BlueprintBase(BaseModel):
     description: str = Field(..., min_length=1, description="Blueprint description")
     pros: Optional[List[Dict[str, Any]]] = Field(None, description="List of pros/advantages")
     cons: Optional[List[Dict[str, Any]]] = Field(None, description="List of cons/disadvantages")
+    mermaid_diagram: Optional[str] = Field(None, description="LLM-generated Mermaid diagram syntax")
 
 
 class BlueprintCreate(BlueprintBase):
@@ -77,6 +87,7 @@ class AnalysisBase(BaseModel):
     category: str = Field(..., min_length=1, max_length=100, description="Analysis category")
     finding: str = Field(..., min_length=1, description="Analysis finding or result")
     severity: int = Field(..., ge=1, le=10, description="Severity level (1-10)")
+    agent_type: Optional[str] = Field(None, description="Agent type that generated this analysis ('systems' or 'bizops')")
 
 
 class AnalysisCreate(AnalysisBase):

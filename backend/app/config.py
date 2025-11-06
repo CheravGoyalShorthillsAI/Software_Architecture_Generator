@@ -28,33 +28,46 @@ else:
 class Settings(BaseSettings):
     """Application settings loaded from environment variables."""
     
+    model_config = SettingsConfigDict(
+        env_file=str(DEFAULT_ENV_PATH),
+        env_file_encoding="utf-8",
+        case_sensitive=False,
+        extra="ignore"  # Ignore extra fields in .env file
+    )
+    
     # Application settings
     app_name: str = "The Genesis Engine"
-    debug: bool = False
+    app_env: str = Field(default="development", alias="APP_ENV")
+    debug: bool = Field(default=False, alias="DEBUG")
+    api_host: str = Field(default="0.0.0.0", alias="API_HOST")
+    api_port: int = Field(default=8000, alias="API_PORT")
     
     # Tiger Cloud Database Configuration
-    tiger_service_id: str = Field(default="", env="TIGER_SERVICE_ID")
-    tiger_db_host: str = Field(default="", env="TIGER_DB_HOST")
-    tiger_db_port: int = Field(default=5432, env="TIGER_DB_PORT")
-    tiger_db_name: str = Field(default="", env="TIGER_DB_NAME")
-    tiger_db_user: str = Field(default="", env="TIGER_DB_USER")
-    tiger_db_password: str = Field(default="", env="TIGER_DB_PASSWORD")
+    tiger_service_id: str = Field(default="", alias="TIGER_SERVICE_ID")
+    tiger_db_host: str = Field(default="", alias="TIGER_DB_HOST")
+    tiger_db_port: int = Field(default=5432, alias="TIGER_DB_PORT")
+    tiger_db_name: str = Field(default="", alias="TIGER_DB_NAME")
+    tiger_db_user: str = Field(default="", alias="TIGER_DB_USER")
+    tiger_db_password: str = Field(default="", alias="TIGER_DB_PASSWORD")
     
     # AI Provider API Keys
-    gemini_api_key: str = Field(default="", env="GEMINI_API_KEY")
-    openai_api_key: str = Field(default="", env="OPENAI_API_KEY")
-    anthropic_api_key: str = Field(default="", env="ANTHROPIC_API_KEY")
-    gemini_model_name: str = Field(default="models/gemini-2.5-pro", env="GEMINI_MODEL_NAME")
+    gemini_api_key: str = Field(default="", alias="GEMINI_API_KEY")
+    openai_api_key: str = Field(default="", alias="OPENAI_API_KEY")
+    anthropic_api_key: str = Field(default="", alias="ANTHROPIC_API_KEY")
+    gemini_model_name: str = Field(default="models/gemini-2.5-pro", alias="GEMINI_MODEL_NAME")
     gemini_embedding_model: str = Field(
         default="models/text-embedding-004",
-        env="GEMINI_EMBEDDING_MODEL",
+        alias="GEMINI_EMBEDDING_MODEL",
         description="Gemini embedding model identifier"
     )
     gemini_embedding_dimension: int = Field(
         default=768,
-        env="GEMINI_EMBEDDING_DIMENSION",
+        alias="GEMINI_EMBEDDING_DIMENSION",
         description="Expected dimensionality of embedding vectors"
     )
+    
+    # Optional GitHub Token
+    github_token: str = Field(default="", alias="GITHUB_TOKEN")
     
     @property
     def database_url(self) -> str:
@@ -63,12 +76,6 @@ class Settings(BaseSettings):
             f"postgresql://{self.tiger_db_user}:{self.tiger_db_password}"
             f"@{self.tiger_db_host}:{self.tiger_db_port}/{self.tiger_db_name}"
         )
-    
-    model_config = SettingsConfigDict(
-        env_file=str(DEFAULT_ENV_PATH),
-        env_file_encoding="utf-8",
-        case_sensitive=False
-    )
 
 @lru_cache()
 def get_settings() -> Settings:

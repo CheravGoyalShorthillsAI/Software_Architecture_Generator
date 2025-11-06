@@ -38,6 +38,7 @@ class Blueprint(Base):
     description = Column(Text, nullable=False)
     pros = Column(JSON, nullable=True)
     cons = Column(JSON, nullable=True)
+    mermaid_diagram = Column(Text, nullable=True)  # LLM-generated Mermaid diagram syntax
 
     # Relationships
     project = relationship("Project", back_populates="blueprints")
@@ -53,6 +54,7 @@ class Analysis(Base):
     category = Column(String(100), nullable=False)
     finding = Column(Text, nullable=False)
     severity = Column(Integer, nullable=False)
+    agent_type = Column(String(20), nullable=True)  # 'systems' or 'bizops'
     finding_embedding = Column(Vector(768), nullable=True)
 
     # Relationship

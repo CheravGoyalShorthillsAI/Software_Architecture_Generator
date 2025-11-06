@@ -10,6 +10,7 @@ import uuid
 from typing import Dict, Any, List, Optional
 
 from fastapi import FastAPI, Depends, HTTPException, BackgroundTasks
+from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, Session
 from pydantic import BaseModel
@@ -37,6 +38,14 @@ app = FastAPI(
     version="1.0.0"
 )
 
+# Configure CORS
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 force_primary_mode = (not TIGER_AVAILABLE) or (not settings.tiger_service_id)
 
@@ -190,7 +199,9 @@ async def create_database_fork(project_id: str, blueprint_index: int) -> str:
 async def blueprint_analysis_orchestrator(
     project_id: str,
     blueprint_data: Dict[str, Any],
-    fork_name: str
+    fork_name: str,
+    systems_analyst_prompt: Optional[str] = None,
+    bizops_analyst_prompt: Optional[str] = None
 ):
     """
     Orchestrator function that runs analysis and saves to forked database.
@@ -204,12 +215,18 @@ async def blueprint_analysis_orchestrator(
         project_id: UUID of the parent project
         blueprint_data: Blueprint data from architect agent
         fork_name: Name of the database fork to use
+        systems_analyst_prompt: Optional custom prompt for systems analyst
+        bizops_analyst_prompt: Optional custom prompt for bizops analyst
     """
     try:
         logger.info(f"Starting analysis orchestrator for project {project_id}, fork {fork_name}")
         
-        # Run analysis agents on the blueprint
-        analyses = await agents.run_analyst_agents(blueprint_data)
+        # Run analysis agents on the blueprint with custom prompts if provided
+        analyses = await agents.run_analyst_agents(
+            blueprint_data,
+            custom_systems_prompt=systems_analyst_prompt,
+            custom_bizops_prompt=bizops_analyst_prompt
+        )
 
         # Generate embeddings for each analysis finding in parallel
         embedding_tasks = [
@@ -285,26 +302,24 @@ async def update_project_status_if_complete(project_id: str):
                 main_db.close()
             return
 
-        # Check both forks to see if they have data
+        # Check blueprint fork to see if it has data (now only generating 1 microservices blueprint)
         fork_0_name = f"project_{project_id}_blueprint_0"
-        fork_1_name = f"project_{project_id}_blueprint_1"
         
         blueprints_complete = 0
         
-        for fork_name in [fork_0_name, fork_1_name]:
-            try:
-                fork_session = create_fork_session(fork_name)
-                blueprints = fork_session.query(models.Blueprint).all()
-                fork_session.close()
-                
-                if blueprints:
-                    blueprints_complete += 1
-            except Exception:
-                # Fork might not exist yet or have issues
-                pass
+        try:
+            fork_session = create_fork_session(fork_0_name)
+            blueprints = fork_session.query(models.Blueprint).all()
+            fork_session.close()
+            
+            if blueprints:
+                blueprints_complete += 1
+        except Exception:
+            # Fork might not exist yet or have issues
+            pass
         
-        # Update main project status if both blueprints are complete
-        if blueprints_complete == 2:
+        # Update main project status if blueprint is complete (only 1 microservices blueprint now)
+        if blueprints_complete == 1:
             main_db = next(get_db())
             crud.update_project_status(main_db, project_id, "completed")
             main_db.close()
@@ -347,6 +362,58 @@ async def root():
 async def health_check():
     """Health check endpoint."""
     return {"status": "healthy"}
+
+
+@app.get("/projects")
+async def list_all_projects(
+    skip: int = 0,
+    limit: int = 20,
+    status: Optional[str] = None,
+    db: Session = Depends(get_db)
+):
+    """
+    List all projects with pagination and optional status filter.
+    
+    Query Parameters:
+        skip: Number of records to skip (default: 0)
+        limit: Maximum number of records to return (default: 20, max: 100)
+        status: Optional status filter ('pending', 'processing', 'completed', 'error')
+        
+    Returns:
+        List of projects with basic information, ordered by creation date (newest first)
+    """
+    try:
+        # Validate limit
+        if limit > 100:
+            limit = 100
+        
+        # Get projects from database
+        projects = crud.list_projects(db, skip=skip, limit=limit, status=status)
+        
+        # Convert to response format
+        projects_list = []
+        for project in projects:
+            projects_list.append({
+                "id": str(project.id),
+                "user_prompt": project.user_prompt[:200] + "..." if len(project.user_prompt) > 200 else project.user_prompt,
+                "status": project.status,
+                "created_at": project.created_at.isoformat() if project.created_at else None,
+                "updated_at": None  # Model doesn't have updated_at field
+            })
+        
+        return {
+            "projects": projects_list,
+            "skip": skip,
+            "limit": limit,
+            "count": len(projects_list)
+        }
+        
+    except Exception as e:
+        logger.error(f"Failed to list projects: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to list projects: {str(e)}"
+        )
 
 
 @app.post("/projects", response_model=ProjectResponse)
@@ -402,12 +469,14 @@ async def create_project(
                 # Create database fork
                 fork_name = await create_database_fork(project_id, i)
                 
-                # Start background analysis
+                # Start background analysis with hardcoded prompts
                 background_tasks.add_task(
                     blueprint_analysis_orchestrator,
                     project_id,
                     blueprint,
-                    fork_name
+                    fork_name,
+                    None,  # systems_analyst_prompt - use default
+                    None   # bizops_analyst_prompt - use default
                 )
                 
                 logger.info(f"Started background analysis for blueprint {i} in fork {fork_name}")
@@ -489,7 +558,8 @@ async def get_project(
                             "id": str(analysis.id),
                             "category": analysis.category,
                             "finding": analysis.finding,
-                            "severity": analysis.severity
+                            "severity": analysis.severity,
+                            "agent_type": analysis.agent_type
                         }
                         for analysis in blueprint.analyses
                     ]
@@ -501,10 +571,10 @@ async def get_project(
                 blueprints=blueprints_data
             )
 
-        # Project is complete - fetch data from forks
+        # Project is complete - fetch data from fork (only 1 microservices blueprint)
         blueprints_data = []
         
-        for blueprint_index in [0, 1]:
+        for blueprint_index in [0]:  # Only blueprint_0 since we generate 1 microservices blueprint
             fork_name = f"project_{project_id}_blueprint_{blueprint_index}"
             
             try:
@@ -532,7 +602,8 @@ async def get_project(
                                 "id": str(analysis.id),
                                 "category": analysis.category,
                                 "finding": analysis.finding,
-                                "severity": analysis.severity
+                                "severity": analysis.severity,
+                                "agent_type": analysis.agent_type
                             }
                             blueprint_dict["analyses"].append(analysis_dict)
                         

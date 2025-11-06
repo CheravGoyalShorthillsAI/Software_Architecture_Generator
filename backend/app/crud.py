@@ -124,6 +124,39 @@ def get_project(db: Session, project_id: str) -> Optional[models.Project]:
         raise Exception(f"Failed to retrieve project: {str(e)}")
 
 
+def list_projects(
+    db: Session, 
+    skip: int = 0, 
+    limit: int = 20,
+    status: Optional[str] = None
+) -> List[models.Project]:
+    """
+    List all projects with pagination and optional status filter.
+    
+    Args:
+        db: Database session
+        skip: Number of records to skip (for pagination)
+        limit: Maximum number of records to return
+        status: Optional status filter ('pending', 'processing', 'completed', 'error')
+        
+    Returns:
+        List of Project instances ordered by creation date (newest first)
+    """
+    try:
+        query = db.query(models.Project)
+        
+        # Apply status filter if provided
+        if status:
+            query = query.filter(models.Project.status == status)
+        
+        # Order by created_at descending (newest first) and apply pagination
+        projects = query.order_by(models.Project.created_at.desc()).offset(skip).limit(limit).all()
+        
+        return projects
+    except Exception as e:
+        raise Exception(f"Failed to list projects: {str(e)}")
+
+
 def save_blueprint_and_analyses(
     db: Session, 
     project_id: str, 
@@ -177,7 +210,8 @@ def save_blueprint_and_analyses(
             name=blueprint_data.get("name", "Unnamed Blueprint"),
             description=blueprint_data.get("description", ""),
             pros=blueprint_data.get("pros", []),
-            cons=blueprint_data.get("cons", [])
+            cons=blueprint_data.get("cons", []),
+            mermaid_diagram=blueprint_data.get("mermaid_diagram", None)
         )
         
         db.add(db_blueprint)
@@ -202,6 +236,7 @@ def save_blueprint_and_analyses(
                 category=analysis_data["category"],
                 finding=analysis_data["finding"],
                 severity=severity,
+                agent_type=analysis_data.get("agent_type"),
                 finding_embedding=analysis_data.get("finding_embedding")
             )
             
@@ -261,6 +296,7 @@ def hybrid_search_in_fork(
             "category": analysis.category,
             "finding": analysis.finding,
             "severity": analysis.severity,
+            "agent_type": analysis.agent_type,
         }
         for analysis in analyses
     ]
