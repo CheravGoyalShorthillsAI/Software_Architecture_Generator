@@ -8,7 +8,7 @@ and other AI services for intelligent automation and responses.
 import asyncio
 import json
 import logging
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 
 import google.generativeai as genai
 from .config import Settings
@@ -19,11 +19,13 @@ settings = Settings()
 # Configure Gemini AI
 genai.configure(api_key=settings.gemini_api_key)
 
+EMBEDDING_MODEL_NAME = "models/text-embedding-004"
+
 class GeminiAgent:
     """AI Agent using Google's Gemini model for text generation and analysis."""
     
-    def __init__(self, model_name: str = "gemini-pro"):
-        self.model = genai.GenerativeModel(model_name)
+    def __init__(self, model_name: Optional[str] = None):
+        self.model = genai.GenerativeModel(model_name or settings.gemini_model_name)
     
     async def generate_text(self, prompt: str) -> str:
         """
@@ -60,6 +62,25 @@ gemini_agent = GeminiAgent()
 
 # Setup logging
 logger = logging.getLogger(__name__)
+
+
+async def generate_embedding(text_to_embed: str) -> List[float]:
+    """Generate an embedding vector for the provided text using Gemini."""
+    if not text_to_embed:
+        return []
+
+    try:
+        response = await genai.embed_content_async(
+            model=EMBEDDING_MODEL_NAME,
+            content=text_to_embed
+        )
+        embedding = response.get("embedding")
+        if embedding is None:
+            raise ValueError("Embedding response did not contain an embedding vector")
+        return list(embedding)
+    except Exception as exc:
+        logger.error("Failed to generate embedding: %s", exc)
+        raise Exception(f"Embedding generation failed: {exc}") from exc
 
 
 async def run_architect_agent(user_prompt: str) -> List[Dict[str, Any]]:

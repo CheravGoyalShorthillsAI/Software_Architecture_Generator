@@ -10,6 +10,7 @@ from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
+from pgvector.sqlalchemy import Vector
 
 Base = declarative_base()
 
@@ -52,6 +53,7 @@ class Analysis(Base):
     category = Column(String(100), nullable=False)
     finding = Column(Text, nullable=False)
     severity = Column(Integer, nullable=False)
+    finding_embedding = Column(Vector(768), nullable=True)
 
     # Relationship
     blueprint = relationship("Blueprint", back_populates="analyses")
