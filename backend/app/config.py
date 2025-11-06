@@ -6,7 +6,24 @@ This module handles all configuration and environment variables.
 
 import os
 from functools import lru_cache
-from pydantic import BaseSettings, Field
+from pathlib import Path
+from pydantic import Field
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+BASE_DIR = Path(__file__).resolve().parent.parent
+ENV_CANDIDATES = [
+    BASE_DIR / ".env",
+    BASE_DIR.parent / ".env",
+    BASE_DIR.parent.parent / ".env",
+]
+
+for candidate in ENV_CANDIDATES:
+    if candidate and candidate.exists():
+        DEFAULT_ENV_PATH = candidate
+        break
+else:
+    DEFAULT_ENV_PATH = ENV_CANDIDATES[0]
+
 
 class Settings(BaseSettings):
     """Application settings loaded from environment variables."""
@@ -27,6 +44,7 @@ class Settings(BaseSettings):
     gemini_api_key: str = Field(default="", env="GEMINI_API_KEY")
     openai_api_key: str = Field(default="", env="OPENAI_API_KEY")
     anthropic_api_key: str = Field(default="", env="ANTHROPIC_API_KEY")
+    gemini_model_name: str = Field(default="models/gemini-2.5-pro", env="GEMINI_MODEL_NAME")
     
     @property
     def database_url(self) -> str:
@@ -36,10 +54,11 @@ class Settings(BaseSettings):
             f"@{self.tiger_db_host}:{self.tiger_db_port}/{self.tiger_db_name}"
         )
     
-    class Config:
-        env_file = "../.env"
-        env_file_encoding = "utf-8"
-        case_sensitive = False
+    model_config = SettingsConfigDict(
+        env_file=str(DEFAULT_ENV_PATH),
+        env_file_encoding="utf-8",
+        case_sensitive=False
+    )
 
 @lru_cache()
 def get_settings() -> Settings:

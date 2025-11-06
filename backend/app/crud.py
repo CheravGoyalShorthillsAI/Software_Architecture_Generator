@@ -4,6 +4,7 @@ CRUD operations for The Genesis Engine
 This module contains database CRUD (Create, Read, Update, Delete) operations.
 """
 
+from sqlalchemy import bindparam, func, select
 from sqlalchemy.orm import Session
 from typing import List, Optional, Type, TypeVar, Generic, Dict, Any
 from pydantic import BaseModel
@@ -11,6 +12,7 @@ from uuid import UUID
 import uuid
 
 from . import models
+from pgvector.sqlalchemy import Vector
 
 # Generic types for CRUD operations
 ModelType = TypeVar("ModelType")
@@ -169,9 +171,6 @@ def save_blueprint_and_analyses(
         if not project:
             raise ValueError(f"Project with ID {project_id} not found")
         
-        # Start transaction
-        db.begin()
-        
         # Create blueprint
         db_blueprint = models.Blueprint(
             project_id=project_uuid,
@@ -202,7 +201,8 @@ def save_blueprint_and_analyses(
                 blueprint_id=db_blueprint.id,
                 category=analysis_data["category"],
                 finding=analysis_data["finding"],
-                severity=severity
+                severity=severity,
+                finding_embedding=analysis_data.get("finding_embedding")
             )
             
             db.add(db_analysis)
@@ -219,6 +219,41 @@ def save_blueprint_and_analyses(
     except Exception as e:
         db.rollback()
         raise Exception(f"Failed to save blueprint and analyses: {str(e)}")
+
+
+def hybrid_search_in_fork(
+    db: Session,
+    query_text: str,
+    query_embedding: List[float],
+    limit: int = 15
+) -> List[models.Analysis]:
+    """Perform hybrid keyword and vector search within a forked database."""
+
+    if not query_text or not query_embedding:
+        return []
+
+    ts_query_param = bindparam("query_text")
+    embedding_param = bindparam("query_embedding", type_=Vector(768))
+
+    stmt = (
+        select(models.Analysis)
+        .where(
+            func.to_tsvector("english", models.Analysis.finding).op("@@")( 
+                func.to_tsquery("english", ts_query_param)
+            )
+        )
+        .order_by(models.Analysis.finding_embedding.op("<=>")(embedding_param))
+        .limit(limit)
+    )
+
+    result = db.execute(
+        stmt,
+        {
+            "query_text": query_text,
+            "query_embedding": query_embedding,
+        }
+    )
+    return result.scalars().all()
 
 
 # Additional utility functions

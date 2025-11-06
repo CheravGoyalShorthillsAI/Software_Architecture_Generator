@@ -4,16 +4,26 @@ Database configuration for The Genesis Engine
 This module handles database connection and session management.
 """
 
+import logging
 import sqlalchemy
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy import create_engine, text
+from sqlalchemy.orm import sessionmaker, Session
 from sqlalchemy.ext.declarative import declarative_base
 from typing import Optional
 
 from .config import Settings
+from .utils import get_tiger_cli_path
 
-# Initialize settings
+# Initialize settings and logger
 settings = Settings()
+logger = logging.getLogger(__name__)
+
+try:
+    TIGER_CLI_PATH = get_tiger_cli_path()
+    TIGER_AVAILABLE = True
+except FileNotFoundError:
+    TIGER_CLI_PATH = None
+    TIGER_AVAILABLE = False
 
 def get_db_connection_string(fork_name: Optional[str] = None) -> str:
     """
@@ -26,7 +36,7 @@ def get_db_connection_string(fork_name: Optional[str] = None) -> str:
         PostgreSQL connection string
     """
     db_name = settings.tiger_db_name
-    if fork_name:
+    if fork_name and TIGER_AVAILABLE:
         db_name = f"{db_name}:{fork_name}"
     
     return (
@@ -58,3 +68,22 @@ def get_db():
         yield db
     finally:
         db.close()
+
+
+def enable_pgvector_extension(db: Session) -> None:
+    """Ensure the pgvector extension is enabled for the current database."""
+    db.execute(text("CREATE EXTENSION IF NOT EXISTS vector;"))
+    db.commit()
+
+
+def initialize_primary_database() -> None:
+    """Initialize primary database schema and extensions if possible."""
+    try:
+        with SessionLocal() as session:
+            enable_pgvector_extension(session)
+            Base.metadata.create_all(bind=session.bind)
+    except Exception as exc:
+        logger.warning("Primary database initialization skipped: %s", exc)
+
+
+initialize_primary_database()

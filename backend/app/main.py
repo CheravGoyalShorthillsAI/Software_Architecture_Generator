@@ -15,18 +15,30 @@ from sqlalchemy.orm import sessionmaker, Session
 from pydantic import BaseModel
 
 from . import crud, models, schemas, agents
-from .database import get_db, get_db_connection_string
+from .database import (
+    get_db,
+    get_db_connection_string,
+    SessionLocal,
+    TIGER_AVAILABLE,
+    TIGER_CLI_PATH,
+)
+from .utils import get_tiger_cli_path
 from .config import Settings
 
 # Initialize settings and logging
 settings = Settings()
 logger = logging.getLogger(__name__)
 
+PRIMARY_FORK_NAME = "__primary__"
+
 app = FastAPI(
     title="The Genesis Engine API",
     description="A powerful AI-driven application built for hackathon excellence",
     version="1.0.0"
 )
+
+
+force_primary_mode = (not TIGER_AVAILABLE) or (not settings.tiger_service_id)
 
 
 # Request/Response Models
@@ -48,8 +60,23 @@ class CompleteProjectResponse(BaseModel):
     blueprints: List[Dict[str, Any]]
 
 
+class SearchRequest(BaseModel):
+    """Request payload for hybrid project search."""
+    query: str
+
+
+def serialize_project(project: models.Project) -> Dict[str, Any]:
+    return {
+        "id": project.id,
+        "user_prompt": project.user_prompt,
+        "status": project.status,
+        "created_at": project.created_at,
+        "blueprints": [],
+    }
+
+
 # Helper Functions
-def create_fork_session(fork_name: str) -> Session:
+def create_fork_session(fork_name: Optional[str]) -> Session:
     """
     Create a new SQLAlchemy session connected to a specific fork database.
     
@@ -59,6 +86,9 @@ def create_fork_session(fork_name: str) -> Session:
     Returns:
         SQLAlchemy session connected to the fork
     """
+    if force_primary_mode or not TIGER_AVAILABLE or not fork_name or fork_name == PRIMARY_FORK_NAME:
+        return SessionLocal()
+
     try:
         fork_connection_string = get_db_connection_string(fork_name)
         fork_engine = create_engine(
@@ -71,8 +101,8 @@ def create_fork_session(fork_name: str) -> Session:
         # Create tables in the fork if they don't exist
         models.Base.metadata.create_all(bind=fork_engine)
         
-        SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=fork_engine)
-        return SessionLocal()
+        ForkSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=fork_engine)
+        return ForkSessionLocal()
     except Exception as e:
         logger.error(f"Failed to create fork session for {fork_name}: {str(e)}")
         raise Exception(f"Failed to connect to fork database: {str(e)}")
@@ -89,12 +119,34 @@ async def create_database_fork(project_id: str, blueprint_index: int) -> str:
     Returns:
         Fork name that was created
     """
+    global force_primary_mode
+
     fork_name = f"project_{project_id}_blueprint_{blueprint_index}"
-    
+
+    if force_primary_mode or not TIGER_AVAILABLE or not settings.tiger_service_id:
+        logger.warning(
+            "Tiger CLI unavailable or configuration incomplete. Using primary database for project %s blueprint %s",
+            project_id,
+            blueprint_index,
+        )
+        force_primary_mode = True
+        return PRIMARY_FORK_NAME
+
     try:
+        tiger_cli = TIGER_CLI_PATH or get_tiger_cli_path()
+
         # Use tiger fork create command
         process = await asyncio.create_subprocess_exec(
-            "tiger", "fork", "create", fork_name,
+            tiger_cli,
+            "service",
+            "fork",
+            settings.tiger_service_id,
+            "--now",
+            "--name",
+            fork_name,
+            "--no-set-default",
+            "--output",
+            "json",
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE
         )
@@ -104,17 +156,35 @@ async def create_database_fork(project_id: str, blueprint_index: int) -> str:
         if process.returncode != 0:
             error_msg = stderr.decode() if stderr else "Unknown error"
             logger.error(f"Tiger fork creation failed: {error_msg}")
-            raise Exception(f"Failed to create database fork: {error_msg}")
+            if "authentication required" in error_msg.lower() or "not logged in" in error_msg.lower():
+                logger.warning(
+                    "Tiger CLI not authenticated. Falling back to primary database for project %s blueprint %s",
+                    project_id,
+                    blueprint_index,
+                )
+            else:
+                logger.warning(
+                    "Tiger CLI fork command returned non-zero exit code. Falling back to primary database for project %s blueprint %s",
+                    project_id,
+                    blueprint_index,
+                )
+            force_primary_mode = True
+            return PRIMARY_FORK_NAME
+
+        if stdout:
+            logger.debug("Tiger fork response: %s", stdout.decode())
         
         logger.info(f"Successfully created database fork: {fork_name}")
         return fork_name
         
     except FileNotFoundError:
-        logger.error("Tiger CLI not found. Make sure it's installed and in PATH.")
-        raise Exception("Tiger CLI not available")
+        logger.warning("Tiger CLI not found. Falling back to primary database.")
+        force_primary_mode = True
+        return PRIMARY_FORK_NAME
     except Exception as e:
         logger.error(f"Fork creation failed: {str(e)}")
-        raise Exception(f"Failed to create database fork: {str(e)}")
+        force_primary_mode = True
+        return PRIMARY_FORK_NAME
 
 
 async def blueprint_analysis_orchestrator(
@@ -140,7 +210,26 @@ async def blueprint_analysis_orchestrator(
         
         # Run analysis agents on the blueprint
         analyses = await agents.run_analyst_agents(blueprint_data)
-        
+
+        # Generate embeddings for each analysis finding in parallel
+        embedding_tasks = [
+            agents.generate_embedding(analysis.get("finding", ""))
+            for analysis in analyses
+        ]
+
+        embedding_results = await asyncio.gather(*embedding_tasks, return_exceptions=True)
+
+        for analysis, embedding_result in zip(analyses, embedding_results):
+            if isinstance(embedding_result, Exception):
+                logger.error(
+                    "Embedding generation failed for analysis '%s': %s",
+                    analysis.get("category", "unknown"),
+                    embedding_result
+                )
+                analysis["finding_embedding"] = None
+            else:
+                analysis["finding_embedding"] = embedding_result if embedding_result else None
+
         # Add analyses to blueprint data
         blueprint_with_analyses = blueprint_data.copy()
         blueprint_with_analyses["analyses"] = analyses
@@ -184,6 +273,18 @@ async def update_project_status_if_complete(project_id: str):
         project_id: UUID of the project to check
     """
     try:
+        if force_primary_mode or not TIGER_AVAILABLE:
+            main_db = next(get_db())
+            try:
+                project = crud.get_project(main_db, project_id)
+                if project and project.blueprints:
+                    if all(blueprint.analyses for blueprint in project.blueprints):
+                        crud.update_project_status(main_db, project_id, "completed")
+                        logger.info(f"Project {project_id} marked as completed (primary DB fallback)")
+            finally:
+                main_db.close()
+            return
+
         # Check both forks to see if they have data
         fork_0_name = f"project_{project_id}_blueprint_0"
         fork_1_name = f"project_{project_id}_blueprint_1"
@@ -211,6 +312,24 @@ async def update_project_status_if_complete(project_id: str):
         
     except Exception as e:
         logger.error(f"Failed to update project completion status: {str(e)}")
+
+
+def get_project_fork_names(project_id: str, max_forks: int = 10) -> List[str]:
+    """Attempt to discover existing fork database names for a project."""
+    if force_primary_mode or not TIGER_AVAILABLE:
+        return [PRIMARY_FORK_NAME]
+
+    fork_names: List[str] = []
+    for index in range(max_forks):
+        fork_name = f"project_{project_id}_blueprint_{index}"
+        try:
+            fork_session = create_fork_session(fork_name)
+            fork_session.close()
+            fork_names.append(fork_name)
+        except Exception:
+            # Stop at the first missing fork assuming contiguous indices
+            break
+    return fork_names
 
 
 # API Endpoints
@@ -345,7 +464,9 @@ async def get_project(
             raise HTTPException(status_code=404, detail="Project not found")
         
         # Convert to response schema
-        project_response = schemas.ProjectResponse.from_orm(project)
+        project_response = schemas.ProjectResponse.model_validate(
+            serialize_project(project)
+        )
         
         # If project is not completed, return basic info
         if project.status != "completed":
@@ -354,6 +475,32 @@ async def get_project(
                 blueprints=[]
             )
         
+        if not TIGER_AVAILABLE:
+            blueprints_data = []
+            for blueprint in project.blueprints:
+                blueprint_dict = {
+                    "id": str(blueprint.id),
+                    "name": blueprint.name,
+                    "description": blueprint.description,
+                    "pros": blueprint.pros,
+                    "cons": blueprint.cons,
+                    "analyses": [
+                        {
+                            "id": str(analysis.id),
+                            "category": analysis.category,
+                            "finding": analysis.finding,
+                            "severity": analysis.severity
+                        }
+                        for analysis in blueprint.analyses
+                    ]
+                }
+                blueprints_data.append(blueprint_dict)
+
+            return CompleteProjectResponse(
+                project=project_response,
+                blueprints=blueprints_data
+            )
+
         # Project is complete - fetch data from forks
         blueprints_data = []
         
@@ -448,3 +595,66 @@ async def get_project_status(
             status_code=500,
             detail=f"Failed to get project status: {str(e)}"
         )
+
+
+@app.post("/projects/{project_id}/search", response_model=List[schemas.AnalysisResponse])
+async def search_project_forks(
+    project_id: str,
+    search_request: SearchRequest,
+    db: Session = Depends(get_db)
+):
+    """Hybrid keyword and semantic search across project forks."""
+
+    query_text = search_request.query.strip()
+    if not query_text:
+        raise HTTPException(status_code=400, detail="Query must not be empty")
+
+    project = crud.get_project(db, project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    try:
+        query_embedding = await agents.generate_embedding(query_text)
+    except Exception as exc:
+        logger.error("Failed to generate query embedding: %s", exc)
+        raise HTTPException(status_code=500, detail="Embedding generation failed")
+
+    if not query_embedding:
+        raise HTTPException(status_code=400, detail="Embedding unavailable for provided query")
+
+    fork_names = get_project_fork_names(project_id)
+    if not fork_names:
+        return []
+
+    async def search_single_fork(fork_name: str) -> List[models.Analysis]:
+        try:
+            fork_session = create_fork_session(fork_name)
+        except Exception as exc:
+            logger.error("Failed to connect to fork %s: %s", fork_name, exc)
+            return []
+
+        try:
+            return await asyncio.to_thread(
+                crud.hybrid_search_in_fork,
+                fork_session,
+                query_text,
+                query_embedding
+            )
+        finally:
+            fork_session.close()
+
+    search_tasks = [search_single_fork(name) for name in fork_names]
+    search_results = await asyncio.gather(*search_tasks, return_exceptions=True)
+
+    combined_results: List[models.Analysis] = []
+    for result in search_results:
+        if isinstance(result, Exception):
+            logger.error("Fork search task failed: %s", result)
+            continue
+        combined_results.extend(result)
+
+    # Optional re-ranking could be applied here if scores were available
+    return [
+        schemas.AnalysisResponse.model_validate(analysis, from_attributes=True)
+        for analysis in combined_results
+    ]
