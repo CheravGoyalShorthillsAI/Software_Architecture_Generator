@@ -566,7 +566,7 @@ async def get_project(
                 blueprints=[]
             )
         
-        if not TIGER_AVAILABLE:
+        if not TIGER_AVAILABLE or force_primary_mode:
             blueprints_data = []
             for blueprint in project.blueprints:
                 blueprint_dict = {
@@ -639,6 +639,36 @@ async def get_project(
             except Exception as e:
                 logger.error(f"Failed to retrieve data from fork {fork_name}: {str(e)}")
                 # Continue with other forks, don't fail the entire request
+                continue
+
+        # Fallback: if no blueprints were found via forks (common when Tiger CLI
+        # isn't available after a restart), load them directly from the primary DB.
+        if not blueprints_data:
+            logger.warning(
+                "No blueprints found via forks for project %s; falling back to primary database",
+                project_id,
+            )
+            project_with_blueprints = crud.get_project_with_blueprints(db, project_id)
+            if project_with_blueprints and project_with_blueprints.blueprints:
+                for blueprint in project_with_blueprints.blueprints:
+                    blueprint_dict = {
+                        "id": str(blueprint.id),
+                        "name": blueprint.name,
+                        "description": blueprint.description,
+                        "pros": blueprint.pros,
+                        "cons": blueprint.cons,
+                        "analyses": [
+                            {
+                                "id": str(analysis.id),
+                                "category": analysis.category,
+                                "finding": analysis.finding,
+                                "severity": analysis.severity,
+                                "agent_type": analysis.agent_type,
+                            }
+                            for analysis in blueprint.analyses
+                        ],
+                    }
+                    blueprints_data.append(blueprint_dict)
         
         return CompleteProjectResponse(
             project=project_response,
