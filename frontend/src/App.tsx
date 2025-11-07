@@ -282,14 +282,6 @@ function App() {
               </div>
             )}
 
-            {/* Conditional Rendering as per Prompt 2.4 */}
-            {/* If isLoading, show the Spinner component */}
-            {isLoading && (
-              <div className="flex items-center justify-center py-20">
-                <Spinner size="large" message="Analyzing architecture blueprints..." />
-              </div>
-            )}
-
             {/* If results are available, render ResultsDisplay component */}
             {!isLoading && results && (
               <>

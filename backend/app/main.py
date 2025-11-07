@@ -251,6 +251,28 @@ async def blueprint_analysis_orchestrator(
         blueprint_with_analyses = blueprint_data.copy()
         blueprint_with_analyses["analyses"] = analyses
         
+        # Generate Mermaid diagram AFTER analyses are complete (so risks can be visualized)
+        logger.info(f"Generating architecture diagram with risk markers for project {project_id}")
+        try:
+            # Get user prompt from main database
+            main_db = next(get_db())
+            try:
+                project = main_db.query(models.Project).filter(models.Project.id == project_id).first()
+                user_prompt = project.user_prompt if project else ""
+            finally:
+                main_db.close()
+            
+            mermaid_diagram = await agents.generate_mermaid_diagram(
+                blueprint_with_analyses, 
+                user_prompt
+            )
+            blueprint_with_analyses["mermaid_diagram"] = mermaid_diagram
+            logger.info(f"Successfully generated diagram for project {project_id}")
+        except Exception as diagram_error:
+            logger.error(f"Diagram generation failed: {str(diagram_error)}")
+            # Don't fail the entire process if diagram fails
+            blueprint_with_analyses["mermaid_diagram"] = None
+        
         # Create fork session and save data
         fork_session = create_fork_session(fork_name)
         try:
@@ -553,6 +575,7 @@ async def get_project(
                     "description": blueprint.description,
                     "pros": blueprint.pros,
                     "cons": blueprint.cons,
+                    "mermaid_diagram": blueprint.mermaid_diagram,  # ← CRITICAL: Include diagram!
                     "analyses": [
                         {
                             "id": str(analysis.id),
@@ -593,6 +616,7 @@ async def get_project(
                             "description": blueprint.description,
                             "pros": blueprint.pros,
                             "cons": blueprint.cons,
+                            "mermaid_diagram": blueprint.mermaid_diagram,  # ← CRITICAL: Include diagram!
                             "analyses": []
                         }
                         

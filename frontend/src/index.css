@@ -12,3 +12,15 @@ body {
   margin: 0;
   min-height: 100vh;
 }
+
+/* Hide Mermaid error messages that appear at bottom of page */
+.mermaidTooltip,
+.error-icon,
+#d2c8db03-ad76-4e12-8c02-f7a9a1a4c6c7 {
+  display: none !important;
+}
+
+/* Hide any syntax error elements from Mermaid */
+body > svg[aria-roledescription="error"] {
+  display: none !important;
+}

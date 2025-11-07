@@ -19,9 +19,10 @@ export default function ArchitectureDiagram({ blueprint }: ArchitectureDiagramPr
   const [diagramSvg, setDiagramSvg] = useState<string>('');
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [showRawDiagram, setShowRawDiagram] = useState(false);
 
   useEffect(() => {
-    // Initialize Mermaid
+    // Initialize Mermaid with error suppression
     mermaid.initialize({
       startOnLoad: false,
       theme: 'default',
@@ -32,6 +33,8 @@ export default function ArchitectureDiagram({ blueprint }: ArchitectureDiagramPr
         htmlLabels: true,
         curve: 'basis',
       },
+      logLevel: 'error', // Suppress verbose logging
+      suppressErrors: true, // Don't display errors in UI
     });
 
     const generateDiagram = async () => {
@@ -45,17 +48,35 @@ export default function ArchitectureDiagram({ blueprint }: ArchitectureDiagramPr
           : generateMermaidSyntax(blueprint);
         
         console.log('Mermaid diagram definition:', diagramDefinition);
+        console.log('Diagram length:', diagramDefinition.length, 'characters');
         console.log('Source:', blueprint.mermaid_diagram ? 'LLM-generated (Gemini)' : 'Client-side fallback');
+
+        // Clean up diagram definition - remove any problematic characters
+        let cleanedDiagram = diagramDefinition.trim();
+        
+        // Remove any HTML/XML tags that might cause issues
+        cleanedDiagram = cleanedDiagram.replace(/<br\s*\/?>/gi, '<br/>');
+        
+        // Validate diagram starts correctly
+        if (!cleanedDiagram.startsWith('graph ')) {
+          console.error('Invalid diagram syntax - must start with "graph TB" or "graph TD"');
+          throw new Error('Invalid Mermaid syntax: diagram must start with "graph TB" or "graph TD"');
+        }
 
         // Generate unique ID for the diagram
         const id = `mermaid-${Date.now()}`;
         
+        console.log('Attempting to render diagram with ID:', id);
+        
         // Render the diagram
-        const { svg } = await mermaid.render(id, diagramDefinition);
+        const { svg } = await mermaid.render(id, cleanedDiagram);
         setDiagramSvg(svg);
-      } catch (err) {
-        console.error('Error generating diagram:', err);
-        setError('Failed to generate diagram. Please check the console for details.');
+        console.log('✅ Diagram rendered successfully');
+      } catch (err: any) {
+        console.error('❌ Error generating diagram:', err);
+        console.error('Error message:', err.message);
+        console.error('Error details:', err);
+        setError(`Failed to generate diagram: ${err.message || 'Unknown error'}. Check browser console for details.`);
       } finally {
         setIsLoading(false);
       }
@@ -84,8 +105,39 @@ export default function ArchitectureDiagram({ blueprint }: ArchitectureDiagramPr
       )}
 
       {error && (
-        <div className="bg-red-50 border-l-4 border-red-500 p-4 rounded-lg">
-          <p className="text-red-700">{error}</p>
+        <div className="space-y-4">
+          <div className="bg-yellow-50 border-l-4 border-yellow-500 p-6 rounded-lg">
+            <div className="flex items-start gap-3">
+              <span className="text-2xl">⚠️</span>
+              <div>
+                <p className="text-yellow-900 font-bold text-lg mb-2">Diagram Generation Issue</p>
+                <p className="text-yellow-800 mb-3">{error}</p>
+                <p className="text-sm text-yellow-700 bg-yellow-100 p-3 rounded">
+                  <strong>Note:</strong> This project was generated with an older version. 
+                  Generate a new project to see the improved architecture diagrams with correct syntax.
+                </p>
+              </div>
+            </div>
+          </div>
+          
+          {blueprint.mermaid_diagram && (
+            <div className="bg-gray-50 border border-gray-300 rounded-lg p-4">
+              <div className="flex justify-between items-center mb-2">
+                <h4 className="font-semibold text-gray-900">🔍 Raw Mermaid Diagram (for debugging)</h4>
+                <button
+                  onClick={() => setShowRawDiagram(!showRawDiagram)}
+                  className="text-sm text-blue-600 hover:text-blue-800 font-medium px-3 py-1 bg-blue-100 rounded"
+                >
+                  {showRawDiagram ? 'Hide' : 'Show'} Raw Code
+                </button>
+              </div>
+              {showRawDiagram && (
+                <pre className="bg-white p-4 rounded border border-gray-200 overflow-x-auto text-xs font-mono max-h-96 overflow-y-auto">
+                  {blueprint.mermaid_diagram}
+                </pre>
+              )}
+            </div>
+          )}
         </div>
       )}
 
@@ -97,24 +149,40 @@ export default function ArchitectureDiagram({ blueprint }: ArchitectureDiagramPr
         />
       )}
 
-      <div className="mt-4 text-sm text-gray-600 bg-blue-50 p-4 rounded-lg border border-blue-200">
-        <p className="font-semibold text-blue-900 mb-2">💡 Diagram Legend:</p>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-xs">
-          <div className="flex items-center gap-2">
-            <div className="w-3 h-3 bg-blue-500 rounded"></div>
-            <span>Services</span>
+      <div className="mt-4 text-sm text-gray-600 bg-gradient-to-r from-blue-50 to-indigo-50 p-5 rounded-xl border-2 border-blue-200 shadow-sm">
+        <p className="font-bold text-blue-900 mb-3 text-base">💡 Diagram Legend</p>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">
+          <div className="flex items-center gap-2 bg-white px-3 py-2 rounded-lg shadow-sm">
+            <div className="w-4 h-4 bg-pink-500 rounded"></div>
+            <span className="font-medium">Clients</span>
           </div>
-          <div className="flex items-center gap-2">
-            <div className="w-3 h-3 bg-green-500 rounded"></div>
-            <span>Databases</span>
+          <div className="flex items-center gap-2 bg-white px-3 py-2 rounded-lg shadow-sm">
+            <div className="w-4 h-4 bg-orange-500 rounded"></div>
+            <span className="font-medium">Gateway/LB</span>
           </div>
-          <div className="flex items-center gap-2">
-            <div className="w-3 h-3 bg-purple-500 rounded"></div>
-            <span>Message Queue</span>
+          <div className="flex items-center gap-2 bg-white px-3 py-2 rounded-lg shadow-sm">
+            <div className="w-4 h-4 bg-blue-500 rounded"></div>
+            <span className="font-medium">Services</span>
           </div>
-          <div className="flex items-center gap-2">
-            <div className="w-3 h-3 bg-orange-500 rounded"></div>
-            <span>Gateway</span>
+          <div className="flex items-center gap-2 bg-white px-3 py-2 rounded-lg shadow-sm">
+            <div className="w-4 h-4 bg-green-500 rounded"></div>
+            <span className="font-medium">Databases</span>
+          </div>
+          <div className="flex items-center gap-2 bg-white px-3 py-2 rounded-lg shadow-sm">
+            <div className="w-4 h-4 bg-purple-500 rounded"></div>
+            <span className="font-medium">Queues</span>
+          </div>
+          <div className="flex items-center gap-2 bg-white px-3 py-2 rounded-lg shadow-sm">
+            <div className="w-4 h-4 bg-cyan-500 rounded"></div>
+            <span className="font-medium">Cache</span>
+          </div>
+          <div className="flex items-center gap-2 bg-white px-3 py-2 rounded-lg shadow-sm">
+            <div className="w-4 h-4 bg-lime-500 rounded"></div>
+            <span className="font-medium">Storage</span>
+          </div>
+          <div className="flex items-center gap-2 bg-white px-3 py-2 rounded-lg shadow-sm">
+            <div className="w-4 h-4 bg-orange-600 rounded"></div>
+            <span className="font-medium">Monitoring</span>
           </div>
         </div>
       </div>
