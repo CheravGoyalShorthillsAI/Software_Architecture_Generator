@@ -38,10 +38,25 @@ app = FastAPI(
     version="1.0.0"
 )
 
+# Determine allowed CORS origins (local dev + optional hosted frontend)
+default_origins = {
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+}
+
+if settings.frontend_origin:
+    normalized_origin = settings.frontend_origin.rstrip("/")
+    if normalized_origin:
+        default_origins.add(normalized_origin)
+        if normalized_origin.startswith("http://"):
+            default_origins.add(normalized_origin.replace("http://", "https://", 1))
+        elif normalized_origin.startswith("https://"):
+            default_origins.add(normalized_origin.replace("https://", "http://", 1))
+
 # Configure CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
+    allow_origins=list(default_origins),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

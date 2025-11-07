@@ -41,6 +41,7 @@ class Settings(BaseSettings):
     debug: bool = Field(default=False, alias="DEBUG")
     api_host: str = Field(default="0.0.0.0", alias="API_HOST")
     api_port: int = Field(default=8000, alias="API_PORT")
+    frontend_origin: str = Field(default="", alias="FRONTEND_ORIGIN", description="Allowed CORS origin for hosted frontend")
     
     # Tiger Cloud Database Configuration
     tiger_service_id: str = Field(default="", alias="TIGER_SERVICE_ID")
