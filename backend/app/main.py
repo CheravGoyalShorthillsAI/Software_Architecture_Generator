@@ -753,3 +753,41 @@ async def search_project_forks(
         schemas.AnalysisResponse.model_validate(analysis)
         for analysis in combined_results
     ]
+
+
+@app.delete("/projects/{project_id}")
+async def delete_project(
+    project_id: str,
+    db: Session = Depends(get_db)
+):
+    """
+    Delete a project and all its related data (blueprints and analyses).
+    
+    Args:
+        project_id: UUID string of the project to delete
+        db: Database session
+        
+    Returns:
+        Success message
+        
+    Raises:
+        HTTPException: If project not found or deletion fails
+    """
+    try:
+        logger.info(f"Attempting to delete project: {project_id}")
+        
+        # Delete the project (will cascade to blueprints and analyses)
+        success = crud.delete_project(db, project_id)
+        
+        if not success:
+            logger.warning(f"Project not found: {project_id}")
+            raise HTTPException(status_code=404, detail="Project not found")
+        
+        logger.info(f"Successfully deleted project: {project_id}")
+        return {"message": "Project deleted successfully", "project_id": project_id}
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error deleting project {project_id}: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to delete project: {str(e)}")

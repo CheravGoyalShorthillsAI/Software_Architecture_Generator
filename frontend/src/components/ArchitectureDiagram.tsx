@@ -16,6 +16,7 @@ interface ArchitectureDiagramProps {
  */
 export default function ArchitectureDiagram({ blueprint }: ArchitectureDiagramProps) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const svgRef = useRef<string>(''); // Store SVG for download
   const [diagramSvg, setDiagramSvg] = useState<string>('');
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -34,7 +35,6 @@ export default function ArchitectureDiagram({ blueprint }: ArchitectureDiagramPr
         curve: 'basis',
       },
       logLevel: 'error', // Suppress verbose logging
-      suppressErrors: true, // Don't display errors in UI
     });
 
     const generateDiagram = async () => {
@@ -71,6 +71,7 @@ export default function ArchitectureDiagram({ blueprint }: ArchitectureDiagramPr
         // Render the diagram
         const { svg } = await mermaid.render(id, cleanedDiagram);
         setDiagramSvg(svg);
+        svgRef.current = svg; // Store for download
         console.log('✅ Diagram rendered successfully');
       } catch (err: any) {
         console.error('❌ Error generating diagram:', err);
@@ -85,12 +86,110 @@ export default function ArchitectureDiagram({ blueprint }: ArchitectureDiagramPr
     generateDiagram();
   }, [blueprint]);
 
+  // Clean up any Mermaid error messages that get appended to the body
+  useEffect(() => {
+    const cleanupErrorMessages = () => {
+      // Find and remove any text nodes or elements containing "Syntax error" or "mermaid version"
+      const bodyChildren = Array.from(document.body.children);
+      
+      bodyChildren.forEach(child => {
+        const text = child.textContent || '';
+        if (
+          text.includes('Syntax error in text') || 
+          text.includes('mermaid version') ||
+          child.id.startsWith('mermaid-') ||
+          child.tagName === 'svg' && child.getAttribute('aria-roledescription') === 'error'
+        ) {
+          // This is likely a Mermaid error message
+          if (child.parentNode === document.body) {
+            console.log('Removing Mermaid error element:', child);
+            child.remove();
+          }
+        }
+      });
+    };
+
+    // Clean up immediately
+    cleanupErrorMessages();
+
+    // Also clean up after a short delay (in case errors appear later)
+    const timeoutId = setTimeout(cleanupErrorMessages, 500);
+    
+    // Set up a MutationObserver to catch any new error elements
+    const observer = new MutationObserver(() => {
+      cleanupErrorMessages();
+    });
+    
+    observer.observe(document.body, { 
+      childList: true, 
+      subtree: false // Only watch direct children of body
+    });
+
+    return () => {
+      clearTimeout(timeoutId);
+      observer.disconnect();
+    };
+  }, [diagramSvg]); // Run whenever diagram changes
+
+  // Download Functions
+  const downloadAsSVG = () => {
+    if (!svgRef.current) return;
+
+    const blob = new Blob([svgRef.current], { type: 'image/svg+xml;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.download = `${blueprint.name.replace(/\s+/g, '_')}_architecture.svg`;
+    link.href = url;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const downloadMermaidCode = () => {
+    const mermaidCode = blueprint.mermaid_diagram || generateMermaidSyntax(blueprint);
+    const blob = new Blob([mermaidCode], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.download = `${blueprint.name.replace(/\s+/g, '_')}_diagram.mmd`;
+    link.href = url;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+
   return (
     <div className="bg-white rounded-2xl p-8 shadow-xl border border-gray-200">
-      <h3 className="text-2xl font-bold text-gray-900 mb-6 flex items-center gap-3">
-        <span className="text-3xl">🏗️</span>
-        Architecture Diagram
-      </h3>
+      <div className="flex items-center justify-between mb-6">
+        <h3 className="text-2xl font-bold text-gray-900 flex items-center gap-3">
+          <span className="text-3xl">🏗️</span>
+          Architecture Diagram
+        </h3>
+        
+        {/* Download Buttons - Only show when diagram is loaded */}
+        {!isLoading && !error && diagramSvg && (
+          <div className="flex items-center gap-2">
+            <button
+              onClick={downloadAsSVG}
+              className="flex items-center gap-2 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors text-sm font-medium shadow-sm"
+              title="Download as SVG"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+              </svg>
+              SVG
+            </button>
+            
+            <button
+              onClick={downloadMermaidCode}
+              className="flex items-center gap-2 px-4 py-2 bg-gray-700 text-white rounded-lg hover:bg-gray-800 transition-colors text-sm font-medium shadow-sm"
+              title="Download Mermaid Code"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
+              </svg>
+              Mermaid Code
+            </button>
+          </div>
+        )}
+      </div>
 
       {isLoading && (
         <div className="flex items-center justify-center py-12">

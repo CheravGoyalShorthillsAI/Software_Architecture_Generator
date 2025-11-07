@@ -353,6 +353,48 @@ def update_project_status(db: Session, project_id: str, status: str) -> Optional
         raise Exception(f"Failed to update project status: {str(e)}")
 
 
+def delete_project(db: Session, project_id: str) -> bool:
+    """
+    Delete a project and all its related blueprints and analyses.
+    
+    Args:
+        db: Database session
+        project_id: UUID string of the project
+        
+    Returns:
+        True if deleted successfully, False if project not found
+    """
+    try:
+        project = get_project(db, project_id)
+        if not project:
+            return False
+        
+        # Get all blueprints for this project
+        blueprints = db.query(models.Blueprint).filter(
+            models.Blueprint.project_id == UUID(project_id)
+        ).all()
+        
+        # Delete all analyses for each blueprint
+        for blueprint in blueprints:
+            db.query(models.Analysis).filter(
+                models.Analysis.blueprint_id == blueprint.id
+            ).delete()
+        
+        # Delete all blueprints
+        db.query(models.Blueprint).filter(
+            models.Blueprint.project_id == UUID(project_id)
+        ).delete()
+        
+        # Delete the project
+        db.delete(project)
+        db.commit()
+        
+        return True
+    except Exception as e:
+        db.rollback()
+        raise Exception(f"Failed to delete project: {str(e)}")
+
+
 # CRUD class instances for generic operations
 class CRUDProject(CRUDBase[models.Project, dict, dict]):
     """CRUD operations for Project model."""

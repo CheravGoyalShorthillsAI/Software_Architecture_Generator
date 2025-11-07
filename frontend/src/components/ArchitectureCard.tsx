@@ -69,10 +69,36 @@ export default function ArchitectureCard({ blueprint }: ArchitectureCardProps) {
   };
 
   /**
-   * Convert markdown bold (**text**) to HTML bold tags
+   * Convert Markdown description to HTML
+   * Handles: ## Headings, **bold**, bullet lists, numbered lists, line breaks
    */
   const formatDescription = (text: string): string => {
-    return text.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+    let formatted = text;
+    
+    // Convert ## Headings to <h3> with spacing
+    formatted = formatted.replace(/^## (.+)$/gm, '<h3 class="text-lg font-bold text-gray-800 mt-4 mb-2">$1</h3>');
+    
+    // Convert **bold** to <strong>
+    formatted = formatted.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+    
+    // Convert bullet lists (- item) to proper HTML list items
+    // Match lines that start with "- " (with optional leading whitespace)
+    formatted = formatted.replace(/^- (.+)$/gm, '<li class="ml-4">$1</li>');
+    
+    // Convert numbered lists (1. item, 2. item) to proper HTML
+    formatted = formatted.replace(/^(\d+)\.\s+(.+)$/gm, '<div class="ml-4 mb-1"><strong>$1.</strong> $2</div>');
+    
+    // Convert \n\n (double newlines) to paragraph breaks
+    formatted = formatted.replace(/\n\n/g, '<br/><br/>');
+    
+    // Convert single \n to single line break
+    formatted = formatted.replace(/\n/g, '<br/>');
+    
+    // Wrap consecutive <li> items in <ul> tags
+    formatted = formatted.replace(/(<li class="ml-4">.*?<\/li>)(?:\s*<br\/>)*(?=<li class="ml-4">)/gs, '$1');
+    formatted = formatted.replace(/(<li class="ml-4">.*?<\/li>)(?:\s*<br\/>)*/gs, '<ul class="list-disc list-inside mb-2">$1</ul>');
+    
+    return formatted;
   };
 
   return (
@@ -85,11 +111,12 @@ export default function ArchitectureCard({ blueprint }: ArchitectureCardProps) {
         
         {/* Description */}
         <div className="bg-white rounded-xl p-6 shadow-sm">
-          <h4 className="text-sm font-bold text-gray-600 mb-3 uppercase tracking-wide">
+          <h4 className="text-sm font-bold text-gray-600 mb-4 uppercase tracking-wide">
             Architecture Overview
           </h4>
-          <p 
-            className="text-gray-700 text-sm leading-relaxed whitespace-pre-wrap"
+          <div 
+            className="text-gray-700 text-sm leading-loose prose prose-sm max-w-none"
+            style={{ lineHeight: '1.8' }}
             dangerouslySetInnerHTML={{ __html: formatDescription(blueprint.description) }}
           />
         </div>

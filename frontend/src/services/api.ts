@@ -393,6 +393,35 @@ export async function pollProjectStatus(
   });
 }
 
+/**
+ * Delete a project and all its related data
+ * 
+ * @param projectId - Project UUID to delete
+ * @returns Success message
+ * @throws Error if deletion fails
+ * 
+ * @example
+ * ```typescript
+ * await deleteProject('550e8400-e29b-41d4-a716-446655440000');
+ * ```
+ */
+export async function deleteProject(projectId: string): Promise<{ message: string; project_id: string }> {
+  try {
+    const response = await axios.delete(`${API_BASE_URL}/projects/${projectId}`);
+    return response.data;
+  } catch (error) {
+    if (axios.isAxiosError(error)) {
+      if (error.response?.status === 404) {
+        throw new Error('Project not found');
+      }
+      throw new Error(
+        `Failed to delete project: ${error.response?.data?.detail || error.message}`
+      );
+    }
+    throw error;
+  }
+}
+
 // ============================================================================
 // Export all functions as a default object (alternative import style)
 // ============================================================================
@@ -406,6 +435,7 @@ const api = {
   getProjectStatus,
   searchProject,
   pollProjectStatus,
+  deleteProject,
 };
 
 export default api;

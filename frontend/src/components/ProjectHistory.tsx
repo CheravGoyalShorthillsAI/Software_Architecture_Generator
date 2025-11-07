@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { listProjects, getProjectResults, type ProjectListItem, type ProjectResponse } from '../services/api';
+import { listProjects, getProjectResults, deleteProject, type ProjectListItem, type ProjectResponse } from '../services/api';
 import { Spinner } from './';
 
 interface ProjectHistoryProps {
@@ -56,6 +56,27 @@ export default function ProjectHistory({ onSelectProject, onBackToHome }: Projec
       console.error('Failed to load project:', err);
     } finally {
       setLoadingProject(null);
+    }
+  };
+
+  const handleDeleteProject = async (projectId: string, event: React.MouseEvent) => {
+    event.stopPropagation(); // Prevent triggering handleProjectClick
+    
+    if (!window.confirm('Are you sure you want to delete this project? This action cannot be undone.')) {
+      return;
+    }
+
+    try {
+      await deleteProject(projectId);
+      // Remove the project from the list
+      setProjects(projects.filter(p => p.id !== projectId));
+      // Show success message briefly
+      const originalError = error;
+      setError('Project deleted successfully');
+      setTimeout(() => setError(originalError), 3000);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to delete project');
+      console.error('Failed to delete project:', err);
     }
   };
 
@@ -190,31 +211,43 @@ export default function ProjectHistory({ onSelectProject, onBackToHome }: Projec
                         {project.user_prompt}
                       </p>
                     </div>
-                    {project.status === 'completed' && (
-                      <div className="flex-shrink-0">
-                        {loadingProject === project.id ? (
-                          <div className="animate-spin h-6 w-6 border-2 border-purple-500 border-t-transparent rounded-full" />
-                        ) : (
-                          <span className="text-purple-600 text-2xl">→</span>
-                        )}
-                      </div>
-                    )}
+                    <div className="flex-shrink-0 flex items-center gap-3">
+                      {/* Delete Button */}
+                      <button
+                        onClick={(e) => handleDeleteProject(project.id, e)}
+                        className="p-2 rounded-lg bg-red-50 hover:bg-red-100 text-red-600 hover:text-red-700 transition-colors"
+                        title="Delete project"
+                      >
+                        <svg 
+                          xmlns="http://www.w3.org/2000/svg" 
+                          className="h-5 w-5" 
+                          fill="none" 
+                          viewBox="0 0 24 24" 
+                          stroke="currentColor"
+                        >
+                          <path 
+                            strokeLinecap="round" 
+                            strokeLinejoin="round" 
+                            strokeWidth={2} 
+                            d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" 
+                          />
+                        </svg>
+                      </button>
+                      
+                      {/* View Arrow (only for completed) */}
+                      {project.status === 'completed' && (
+                        <div>
+                          {loadingProject === project.id ? (
+                            <div className="animate-spin h-6 w-6 border-2 border-purple-500 border-t-transparent rounded-full" />
+                          ) : (
+                            <span className="text-purple-600 text-2xl">→</span>
+                          )}
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </div>
               ))}
-            </div>
-          )}
-
-          {/* Refresh Button */}
-          {!isLoading && (
-            <div className="mt-6 text-center">
-              <button
-                onClick={loadProjects}
-                className="text-purple-600 hover:text-purple-700 font-medium text-sm flex items-center gap-2 mx-auto"
-              >
-                <span className="text-lg">🔄</span>
-                Refresh
-              </button>
             </div>
           )}
         </div>

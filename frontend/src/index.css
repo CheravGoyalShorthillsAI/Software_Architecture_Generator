@@ -13,14 +13,24 @@ body {
   min-height: 100vh;
 }
 
-/* Hide Mermaid error messages that appear at bottom of page */
+/* Hide Mermaid error messages and tooltips */
 .mermaidTooltip,
 .error-icon,
-#d2c8db03-ad76-4e12-8c02-f7a9a1a4c6c7 {
+.error-text {
   display: none !important;
+  visibility: hidden !important;
 }
 
-/* Hide any syntax error elements from Mermaid */
-body > svg[aria-roledescription="error"] {
+/* Hide any error SVGs from Mermaid */
+svg[aria-roledescription="error"],
+body > svg[id*="mermaid"][aria-roledescription="error"] {
   display: none !important;
+  visibility: hidden !important;
+}
+
+/* Additional cleanup for any stray Mermaid error elements */
+.mermaid-error,
+[id*="mermaid-"][id*="error"] {
+  display: none !important;
+  visibility: hidden !important;
 }

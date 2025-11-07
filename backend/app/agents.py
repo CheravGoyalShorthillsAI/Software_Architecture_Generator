@@ -121,31 +121,31 @@ CRITICAL INSTRUCTIONS:
 1. Return ONLY a valid JSON array containing exactly 1 object
 2. The object must have these keys: "name", "description", "pros", "cons"
 3. "name": String (max 255 chars) - Should include "Microservices" in the name
-4. "description": String - Detailed technical description of the microservices architecture including:
-   - Core microservices and their responsibilities
-   - Communication patterns (REST APIs, message queues, event-driven)
-   - Data management strategy (database per service, shared databases, etc.)
-   - Infrastructure considerations (containers, orchestration, service mesh)
+4. "description": String - A detailed **Markdown-formatted** technical description of the microservices architecture including:
+   - Use Markdown headings (##) for sections like "Architecture Overview", "Core Microservices & Responsibilities", "Communication Patterns", etc.
+   - Use bullet points (-) and numbered lists (1., 2., 3.) for readability.
+   - Keep paragraphs short and clearly separated.
 5. "pros": Array of objects with "point" and "description" keys - advantages (4-6 items)
 6. "cons": Array of objects with "point" and "description" keys - disadvantages/challenges (4-6 items)
-7. NO extra text, explanations, or markdown - ONLY the JSON array
+7. Do NOT include any explanatory text outside the JSON array.
+8. Inside the "description", Markdown is allowed and encouraged for formatting.
 
 Example format:
 [
   {
     "name": "Cloud-Native Microservices Architecture",
-    "description": "Distributed system with independent services deployed in containers, communicating via REST APIs and event streaming. Each service owns its data and can be developed, deployed, and scaled independently.",
+    "description": "## Architecture Overview\nA distributed system with independent services deployed in containers.\n\n## Core Microservices & Responsibilities\n1. **User Service** - Handles user authentication.\n2. **Order Service** - Manages order creation and status.\n3. **Inventory Service** - Tracks product availability.\n\n## Communication Patterns\n- **REST APIs** for synchronous calls\n- **Kafka** for async event streaming\n\n## Data Management Strategy\n- Database per service using PostgreSQL and MongoDB\n\n## Infrastructure Considerations\n- Containerized using Docker\n- Deployed with Kubernetes\n- Service mesh (Istio) for observability and secure communication",
     "pros": [
-      {"point": "Independent Scalability", "description": "Each microservice can scale horizontally based on its specific load patterns"},
-      {"point": "Technology Flexibility", "description": "Teams can choose optimal tech stacks per service"},
-      {"point": "Fault Isolation", "description": "Failures in one service don't cascade to others"},
-      {"point": "Faster Development", "description": "Teams work independently with smaller, focused codebases"}
+      {"point": "Independent Scalability", "description": "Each microservice scales based on its workload"},
+      {"point": "Tech Flexibility", "description": "Teams can use different stacks per service"},
+      {"point": "Fault Isolation", "description": "Failures remain localized"},
+      {"point": "Agile Delivery", "description": "Independent deployments speed up releases"}
     ],
     "cons": [
-      {"point": "Operational Complexity", "description": "Requires robust DevOps practices and infrastructure automation"},
-      {"point": "Distributed System Challenges", "description": "Network latency, service discovery, and inter-service communication overhead"},
-      {"point": "Data Consistency", "description": "Managing transactions across services requires eventual consistency patterns"},
-      {"point": "Testing Complexity", "description": "Integration and end-to-end testing becomes more complex"}
+      {"point": "Operational Overhead", "description": "Requires Kubernetes, CI/CD, and monitoring setup"},
+      {"point": "Complex Debugging", "description": "Tracing issues across distributed services can be tough"},
+      {"point": "Data Consistency", "description": "Requires eventual consistency mechanisms"},
+      {"point": "Higher Infrastructure Cost", "description": "More containers and services increase base cost"}
     ]
   }
 ]
