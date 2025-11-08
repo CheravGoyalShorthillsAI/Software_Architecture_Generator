@@ -101,6 +101,11 @@ export default function ResultsDisplay({ results }: ResultsDisplayProps) {
         )}
       </div>
 
+      {/* Original Prompt Card */}
+      <div className="max-w-5xl mx-auto w-full">
+        <OriginalPromptCard prompt={results.project.user_prompt} />
+      </div>
+
       {/* Search Results (if any) */}
       {searchResults && searchResults.length > 0 && (
         <div className="max-w-5xl mx-auto bg-yellow-50 border-2 border-yellow-200 rounded-2xl p-6">
@@ -160,6 +165,35 @@ export default function ResultsDisplay({ results }: ResultsDisplayProps) {
           </p>
         </div>
       )}
+    </div>
+  );
+}
+
+function OriginalPromptCard({ prompt }: { prompt: string }) {
+  const lines = prompt
+    .split(/\r?\n/)
+    .map(line => line.trim())
+    .filter(Boolean);
+
+  return (
+    <div className="relative overflow-hidden rounded-3xl border border-purple-200 shadow-lg bg-gradient-to-br from-purple-50 via-white to-purple-100">
+      <div className="absolute inset-0 pointer-events-none opacity-20 bg-[radial-gradient(circle_at_top_left,#a855f7,transparent_55%),radial-gradient(circle_at_bottom_right,#6366f1,transparent_55%)]" />
+      <div className="relative p-6 md:p-8 flex flex-col gap-4">
+        <div className="flex items-start gap-4">
+          <div className="w-14 h-14 rounded-3xl bg-white shadow-lg flex items-center justify-center text-3xl">
+            📝
+          </div>
+          <div>
+            <h3 className="text-xl md:text-2xl font-bold text-purple-900 leading-snug">Original Prompt</h3>
+            <p className="text-sm md:text-base text-purple-500">The exact request that generated this architecture</p>
+          </div>
+        </div>
+        <div className="bg-white/70 rounded-2xl p-5 md:p-6 border border-purple-100 shadow-inner">
+          <p className="text-base md:text-lg text-gray-800 leading-relaxed font-medium whitespace-pre-wrap break-words">
+            {prompt}
+          </p>
+        </div>
+      </div>
     </div>
   );
 }
